@@ -335,95 +335,128 @@ export class CaptchaStage extends BaseStage<CaptchaChallenge, CaptchaChallengeRe
 
     renderMain() {
         return html`<ak-flow-card .challenge=${this.challenge}>
-                <form class="pf-c-form">
-                    <ak-form-static
-                        class="pf-c-form__group"
-                        userAvatar="${this.challenge.pendingUserAvatar}"
-                        user=${this.challenge.pendingUser}
-                    >
-                        <div slot="link">
-                            <a href="${ifDefined(this.challenge.flowInfo?.cancelUrl)}"
-                                >${msg("Not you?")}</a
-                            >
-                        </div>
-                    </ak-form-static>
-                    ${this.renderBody()}
-                </form>
-            </div>
-    </ak-flow-card>`;
+            <form class="pf-c-form">
+                <ak-form-static
+                    class="pf-c-form__group"
+                    userAvatar="${this.challenge.pendingUserAvatar}"
+                    user=${this.challenge.pendingUser}
+                >
+                    <div slot="link">
+                        <a href="${ifDefined(this.challenge.flowInfo?.cancelUrl)}"
+                            >${msg("Not you?")}</a
+                        >
+                    </div>
+                </ak-form-static>
+                ${this.renderBody()}
+            </form>
+        </ak-flow-card>`;
     }
 
     render() {
-        // [isEmbedded, hasChallenge, isInteractive]
-        // prettier-ignore
-        return match([this.embedded, Boolean(this.challenge), Boolean(this.challenge?.interactive)])
-            .with([true,  false, P.any], () => nothing)
-            .with([true,  true,  false], () => nothing)
-            .with([true,  true,  true],  () => this.renderBody())
-            .with([false, false, P.any], () => akEmptyState({ loading: true }))
-            .with([false, true,  P.any], () => this.renderMain())
-            .exhaustive();
+        if (!this.challenge) {
+            return this.embedded ? nothing : akEmptyState({ loading: true });
+        }
+
+        if (!this.embedded) {
+            return this.renderMain();
+        }
+
+        return this.challenge.interactive ? this.renderBody() : nothing;
     }
 
-    firstUpdated(changedProperties: PropertyValues<this>) {
-        if (!(changedProperties.has("challenge") && this.challenge !== undefined)) {
+    //#endregion;
+
+    //#region Lifecycle
+
+    public connectedCallback(): void {
+        super.connectedCallback();
+        window.addEventListener("message", this.#messageListener, {
+            signal: this.#listenController.signal,
+        });
+    }
+
+    public disconnectedCallback(): void {
+        this.#listenController.abort();
+
+        if (!this.challenge?.interactive) {
+            if (document.body.contains(this.captchaDocumentContainer)) {
+                document.body.removeChild(this.captchaDocumentContainer);
+            }
+        }
+
+        super.disconnectedCallback();
+    }
+
+    //#endregion
+
+    public firstUpdated(changedProperties: PropertyValues<this>) {
+        if (!(changedProperties.has("challenge") && typeof this.challenge !== "undefined")) {
             return;
         }
 
-        const attachCaptcha = async () => {
+        const loadListener = async () => {
             console.debug("authentik/stages/captcha: script loaded");
-            const handlers = this.handlers.filter(({ name }) => Object.hasOwn(window, name));
-            let lastError = undefined;
+
+            let lastError: unknown;
             let found = false;
-            for (const handler of handlers) {
-                console.debug(`authentik/stages/captcha: trying handler ${handler.name}`);
+
+            for (const [name, handler] of this.#handlers) {
+                if (!Object.hasOwn(window, name)) {
+                    continue;
+                }
+
+                console.debug(`authentik/stages/captcha: trying handler ${name}`);
+
+                const runner = this.challenge.interactive ? handler.interactive : handler.execute;
+
                 try {
-                    const runner = this.challenge.interactive
-                        ? handler.interactive
-                        : handler.execute;
                     await runner.apply(this);
-                    console.debug(`authentik/stages/captcha[${handler.name}]: handler succeeded`);
+
+                    console.debug(`authentik/stages/captcha[${name}]: handler succeeded`);
+
                     found = true;
                     this.activeHandler = handler;
+
                     break;
-                } catch (exc) {
-                    console.debug(`authentik/stages/captcha[${handler.name}]: handler failed`);
-                    console.debug(exc);
-                    lastError = exc;
+                } catch (error) {
+                    console.debug(`authentik/stages/captcha[${name}]: handler failed`);
+                    console.debug(error);
+
+                    lastError = error;
                 }
             }
-            this.error = found ? undefined : (lastError ?? "Unspecified error").toString();
+
+            this.error = found ? null : pluckErrorDetail(lastError, "Unspecified error");
         };
 
         const scriptElement = document.createElement("script");
+
         scriptElement.src = this.challenge.jsUrl;
         scriptElement.async = true;
         scriptElement.defer = true;
-        scriptElement.dataset.akCaptchaScript = "true";
-        scriptElement.onload = attachCaptcha;
+        scriptElement.onload = loadListener;
 
-        document.head
-            .querySelectorAll("[data-ak-captcha-script=true]")
-            .forEach((el) => el.remove());
+        this.#scriptElement?.remove();
 
-        document.head.appendChild(scriptElement);
+        this.#scriptElement = document.head.appendChild(scriptElement);
 
         if (!this.challenge.interactive) {
             document.body.appendChild(this.captchaDocumentContainer);
         }
     }
 
-    updated(changedProperties: PropertyValues<this>) {
+    public updated(changedProperties: PropertyValues<this>) {
         if (!changedProperties.has("refreshedAt") || !this.challenge) {
             return;
         }
 
         console.debug("authentik/stages/captcha: refresh triggered");
-        if (this.challenge.interactive) {
-            this.activeHandler?.refreshInteractive.apply(this);
-        } else {
-            this.activeHandler?.refresh.apply(this);
-        }
+
+        const handler = this.challenge.interactive
+            ? this.activeHandler?.refreshInteractive
+            : this.activeHandler?.refresh;
+
+        handler?.apply(this);
     }
 }
 

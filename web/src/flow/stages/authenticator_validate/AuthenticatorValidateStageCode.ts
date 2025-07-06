@@ -67,12 +67,7 @@ export class AuthenticatorValidateStageWebCode extends BaseDeviceStage<
 
     render(): TemplateResult {
         return html`<ak-flow-card .challenge=${this.challenge}>
-            <form
-                class="pf-c-form"
-                @submit=${(e: Event) => {
-                    this.submitForm(e);
-                }}
-            >
+            <form class="pf-c-form" @submit=${this.submitForm}>
                 ${this.renderUserInfo()}
                 <div class="icon-description">
                     <i class="fa ${this.deviceIcon()}" aria-hidden="true"></i>

@@ -95,39 +95,36 @@ export class ConsentStage extends BaseStage<ConsentChallenge, ConsentChallengeRe
 
     render(): TemplateResult {
         return html`<ak-flow-card .challenge=${this.challenge}>
-                <form
-                    class="pf-c-form"
-                    @submit=${(e: Event) => {
-                        this.submitForm(e, {
-                            token: this.challenge.token,
-                        });
-                    }}
+            <form
+                class="pf-c-form"
+                @submit=${(event: SubmitEvent) => {
+                    this.submitForm(event, {
+                        token: this.challenge.token,
+                    });
+                }}
+            >
+                <ak-form-static
+                    class="pf-c-form__group"
+                    userAvatar="${this.challenge.pendingUserAvatar}"
+                    user=${this.challenge.pendingUser}
                 >
-                    <ak-form-static
-                        class="pf-c-form__group"
-                        userAvatar="${this.challenge.pendingUserAvatar}"
-                        user=${this.challenge.pendingUser}
-                    >
-                        <div slot="link">
-                            <a href="${ifDefined(this.challenge.flowInfo?.cancelUrl)}"
-                                >${msg("Not you?")}</a
-                            >
-                        </div>
-                    </ak-form-static>
-                    ${
-                        this.challenge.additionalPermissions.length > 0
-                            ? this.renderAdditional()
-                            : this.renderNoPrevious()
-                    }
-
-                    <div class="pf-c-form__group pf-m-action">
-                        <button type="submit" class="pf-c-button pf-m-primary pf-m-block">
-                            ${msg("Continue")}
-                        </button>
+                    <div slot="link">
+                        <a href="${ifDefined(this.challenge.flowInfo?.cancelUrl)}"
+                            >${msg("Not you?")}</a
+                        >
                     </div>
-                </form>
-            </div>
-                </ak-flow-card>`;
+                </ak-form-static>
+                ${this.challenge.additionalPermissions.length > 0
+                    ? this.renderAdditional()
+                    : this.renderNoPrevious()}
+
+                <div class="pf-c-form__group pf-m-action">
+                    <button type="submit" class="pf-c-button pf-m-primary pf-m-block">
+                        ${msg("Continue")}
+                    </button>
+                </div>
+            </form>
+        </ak-flow-card>`;
     }
 }
 
